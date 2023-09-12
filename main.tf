@@ -1,30 +1,63 @@
 terraform {
   required_providers {
-    docker  = {
-    source = "kreuzwerker/docker" 
-    version = "2.16.0"
-    } 
+    kubernetes = {
+      source  = "hashicorp/kubernetes"
+      version = ">= 2.0.0"
+    }
   }
 }
-
-provider "docker" {
-  host = "unix:///var/run/docker.sock"
+provider "kubernetes" {
+  config_path = ".kube/admin.conf"
 }
-
- resource "docker_image" "nginx" {
-  name = "nginx:latest"
-  keep_locally = true
+resource "kubernetes_namespace" "test" {
+  metadata {
+    name = "nginx"
+  }
 }
-
- resource "docker_container" "nginx"{
- image = docker_image.nginx.name
- name = "nginx"
- ports {
-  internal = 80
-  external = 8000
- }
- volumes{
- container_path = "/home/admin/data/nginx_home"
- host_path = "/home/admin/data/nginx_home"
- }
+resource "kubernetes_deployment" "test" {
+  metadata {
+    name      = "nginx"
+    namespace = kubernetes_namespace.test.metadata.0.name
+  }
+  spec {
+    replicas = 2
+    selector {
+      match_labels = {
+        app = "MyTestApp"
+      }
+    }
+    template {
+      metadata {
+        labels = {
+          app = "MyTestApp"
+        }
+      }
+      spec {
+        container {
+          image = "nginx"
+          name  = "nginx-container"
+          port {
+            container_port = 80
+          }
+        }
+      }
+    }
+  }
+}
+resource "kubernetes_service" "test" {
+  metadata {
+    name      = "nginx"
+    namespace = kubernetes_namespace.test.metadata.0.name
+  }
+  spec {
+    selector = {
+      app = kubernetes_deployment.test.spec.0.template.0.metadata.0.labels.app
+    }
+    type = "NodePort"
+    port {
+      node_port   = 30201
+      port        = 80
+      target_port = 80
+    }
+  }
 }
